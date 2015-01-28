@@ -76,11 +76,17 @@
 
 
 struct ngx_command_s {
+    //配置项名
     ngx_str_t             name;
+    //配置项可以出现的位置,以及参数个数
     ngx_uint_t            type;
+    //处理配置项函数
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+    //配置项的偏移量，offset指定
     ngx_uint_t            conf;
+    //使用预设的解析方法解析配置项，听说是优秀设计
     ngx_uint_t            offset;
+    //配置项读取后的配置方法，只能是ngx_conf_post_t结构体指针
     void                 *post;
 };
 
@@ -109,20 +115,25 @@ struct ngx_open_file_s {
 #define NGX_MODULE_V1_PADDING  0, 0, 0, 0, 0, 0, 0, 0
 
 struct ngx_module_s {
-    ngx_uint_t            ctx_index;
-    ngx_uint_t            index;
+    ngx_uint_t            ctx_index;        //在同一类模块中的序号
+    ngx_uint_t            index;            //在ngx_modules数组中的序号
 
     ngx_uint_t            spare0;
     ngx_uint_t            spare1;
     ngx_uint_t            spare2;
     ngx_uint_t            spare3;
 
-    ngx_uint_t            version;
+    ngx_uint_t            version;          //以上七个值有NGX_MODULE_V1赋予默认值
 
-    void                 *ctx;
+    //同一类模块上下文结构，如HTTP类型的模块需要指向ngx_http_module_t结构体
+    void                 *ctx;              
+
+    //该数组用于定义模块配置文件参数
     ngx_command_t        *commands;
+    //模块类型，与ctx解析的时候要根据这个判断NGX_HTTP_MODULE,NGX_CORE_MODULE,NGX_CONF_MODULE,NGX_EVENT_MODULE,NGX_MAIL_MODULE
     ngx_uint_t            type;
 
+    //各个时间点的回调函数
     ngx_int_t           (*init_master)(ngx_log_t *log);
 
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);
@@ -134,7 +145,7 @@ struct ngx_module_s {
 
     void                (*exit_master)(ngx_cycle_t *cycle);
 
-    uintptr_t             spare_hook0;
+    uintptr_t             spare_hook0;      //以下八个值由NGX_MODULE_V1_PADDING赋值
     uintptr_t             spare_hook1;
     uintptr_t             spare_hook2;
     uintptr_t             spare_hook3;

@@ -17,7 +17,7 @@ typedef struct ngx_list_part_s  ngx_list_part_t;
 
 struct ngx_list_part_s {
     void             *elts;
-    ngx_uint_t        nelts;
+    ngx_uint_t        nelts;    //链表数组已使用个数
     ngx_list_part_t  *next;
 };
 
@@ -25,8 +25,8 @@ struct ngx_list_part_s {
 typedef struct {
     ngx_list_part_t  *last;
     ngx_list_part_t   part;
-    size_t            size;
-    ngx_uint_t        nalloc;
+    size_t            size;     //元素大小
+    ngx_uint_t        nalloc;   //链表数组元素最大个数
     ngx_pool_t       *pool;
 } ngx_list_t;
 

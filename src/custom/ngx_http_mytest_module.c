@@ -20,45 +20,6 @@ static ngx_http_module_t  ngx_http_mytest_module_ctx = {
     NULL                                   /* merge location configuration */
 };
 
-static ngx_command_t  ngx_http_mytest_commands[] = {
-    {
-        ngx_string("mytest"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
-        ngx_http_test,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        0,
-        NULL
-    },
-    ngx_null_command
-};
-
-
-
-ngx_module_t  ngx_http_mytest_module = {
-    NGX_MODULE_V1,
-    &ngx_http_mytest_module_ctx,             /* module context */
-    ngx_http_mytest_commands,                /* module directives */
-    NGX_HTTP_MODULE,                       /* module type */
-    NULL,                                  /* init master */
-    NULL,                                  /* init module */
-    NULL,                                  /* init process */
-    NULL,                                  /* init thread */
-    NULL,                                  /* exit thread */
-    NULL,                                  /* exit process */
-    NULL,                                  /* exit master */
-    NGX_MODULE_V1_PADDING
-};
-
-static char*
-ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-    ngx_http_core_loc_conf_t *clcf;
-    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_mytest_handler;
-
-    return NGX_CONF_OK;
-}
-
 static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
 {
     if(! (r->method & (NGX_HTTP_GET|NGX_HTTP_HEAD)) )
@@ -98,7 +59,7 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
     //这里copy一次是因为nginx是全异步的，所以response中的内存离开这个函数时很可能就被释放的
-    ngx_memcopy(b->pos, response->data, response.len);
+    ngx_memcpy(b->pos, response.data, response.len);
     b->last = b->pos + response.len;
     b->last_buf = 1;
 
@@ -111,4 +72,46 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
     //发送包体，发送结束后http框架会调用ngx_http_finalize_request方法结束请求
     return ngx_http_output_filter(r, &out);
 }
+
+static char*
+ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_core_loc_conf_t *clcf;
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    clcf->handler = ngx_http_mytest_handler;
+
+    return NGX_CONF_OK;
+}
+
+static ngx_command_t  ngx_http_mytest_commands[] = {
+    {
+        ngx_string("mytest"),
+        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
+        ngx_http_mytest,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        0,
+        NULL
+    },
+    ngx_null_command
+};
+
+
+
+ngx_module_t  ngx_http_mytest_module = {
+    NGX_MODULE_V1,
+    &ngx_http_mytest_module_ctx,             /* module context */
+    ngx_http_mytest_commands,                /* module directives */
+    NGX_HTTP_MODULE,                       /* module type */
+    NULL,                                  /* init master */
+    NULL,                                  /* init module */
+    NULL,                                  /* init process */
+    NULL,                                  /* init thread */
+    NULL,                                  /* exit thread */
+    NULL,                                  /* exit process */
+    NULL,                                  /* exit master */
+    NGX_MODULE_V1_PADDING
+};
+
+
+
 

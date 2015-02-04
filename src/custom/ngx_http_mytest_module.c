@@ -24,16 +24,6 @@ static ngx_http_module_t  ngx_http_mytest_module_ctx = {
     NULL                                   /* merge location configuration */
 };
 
-static void*
-ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
-{
-    ngx_http_mytest_conf_t *mycf;
-    mycf = (ngx_http_mytest_conf_t*)ngx_palloc(cf->pool, sizeof(ngx_http_mytest_conf_t));
-    mycf->upstream.connect_timeout = NGX_CONF_UNSET_MSEC;
-    mycf->upstream.send_timeout = NGX_CONF_UNSET_MSEC;
-    mycf->upstream.read_timeout = NGX_CONF_UNSET_MSEC;
-    mycf->upstream.store_access = NGX_CONF_UNSET_MSEC;
-}
 
 static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
 {

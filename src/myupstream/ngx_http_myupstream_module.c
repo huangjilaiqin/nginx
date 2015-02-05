@@ -353,12 +353,25 @@ myupstream_process_header(ngx_http_request_t *r)
     for(;;)
     {
         rc = ngx_http_parse_header_line(r, &r->upstream->buffer, 1);
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "rc: %d", rc);
         if(rc == NGX_OK)
         {
             //向headers_in.headers这个ngx_list_t中添加HTTP头部
             h = ngx_list_push(&r->upstream->headers_in.headers);
             if(h == NULL)
                 return NGX_ERROR;
+
+            if(r == NULL)
+            {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "r is null");
+            }
+            else
+            {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "r is not null");
+            }
+
+            //结果显示r->header_hash为空
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "header_hash:%u\n", r->header_hash);
             h->hash = r->header_hash;
             h->key.len = r->header_name_end - r->header_name_start;
             h->value.len = r->header_end - r->header_start;
@@ -372,8 +385,10 @@ myupstream_process_header(ngx_http_request_t *r)
 
             ngx_memcpy(h->key.data, r->header_name_start, h->key.len);
             h->key.data[h->key.len] = '\0';
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "key data:%s", h->key.data);
             ngx_memcpy(h->value.data, r->header_start, h->value.len);
             h->value.data[h->value.len] = '\0';
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "value data:%s", h->value.data);
 
             //lowcase_index的作用？
             if(h->key.len == r->lowcase_index)
@@ -386,17 +401,21 @@ myupstream_process_header(ngx_http_request_t *r)
             }
 
             //查找该头部是否在配置文件中
+            //因为h->hash为空这里出发signal 11,worker进程退出
             hh = ngx_hash_find(&umcf->headers_in_hash, h->hash, h->lowcase_key, h->key.len);
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_hash_find out\n");
             if(hh && hh->handler(r, h, hh->offset) != NGX_OK)
             {
                 return NGX_ERROR;
             }
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "continue\n");
             continue;
         }
 
         if(rc == NGX_HTTP_PARSE_HEADER_DONE)
         {
             //根据http协议规定server和date头部必须有，如果没有则设置
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "NGX_HTTP_PARSE_HEADER_DONE\n");
             if(r->upstream->headers_in.server == NULL)
             {
                 h = ngx_list_push(&r->upstream->headers_in.headers);
@@ -421,10 +440,12 @@ myupstream_process_header(ngx_http_request_t *r)
                 ngx_str_null(&h->value);
                 h->lowcase_key = (u_char*) "date";
             }
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "解析头部完成");
             return NGX_OK;
         }
         if(rc == NGX_AGAIN)
         {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "NGX_AGAIN\n");
             return rc;
         }
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "upstream sent invalid header");

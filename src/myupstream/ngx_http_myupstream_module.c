@@ -6,19 +6,19 @@
 #include <ngx_event_pipe.h>
 #include <ngx_http.h>
 
-static void*
-ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf);
+static void* ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf);
 ngx_int_t myupstream_create_request(ngx_http_request_t *r);
 ngx_int_t myupstream_process_status_line(ngx_http_request_t *r);
 ngx_int_t myupstream_process_header(ngx_http_request_t *r);
-ngx_int_t myupsteam_finalize_request(ngx_http_request_t *r);
-
+static void myupstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc);
+static char* ngx_http_myupstream(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 typedef struct {
     ngx_http_upstream_conf_t upstream;
 } ngx_http_myupstream_conf_t;
 
 typedef struct {
     ngx_http_status_t status;
+    ngx_str_t backendServer;
 } ngx_http_myupstream_ctx_t;
 
 static ngx_http_module_t  ngx_http_myupstream_module_ctx = {
@@ -35,6 +35,124 @@ static ngx_http_module_t  ngx_http_myupstream_module_ctx = {
     NULL                                   /* merge location configuration */
 };
 
+static ngx_command_t  ngx_http_myupstream_commands[] = {
+    {
+        ngx_string("myupstream"),
+        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
+        ngx_http_myupstream,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        0,
+        NULL
+    },
+    {
+        ngx_string("connect_timeout"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_msec_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.connect_timeout),
+        NULL
+    },
+    {
+        ngx_string("send_timeout"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_msec_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.send_timeout),
+        NULL
+    },
+    {
+        ngx_string("read_timeout"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_msec_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.read_timeout),
+        NULL
+    },
+    {
+        ngx_string("store_access"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE123,
+        ngx_conf_set_access_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.store_access),
+        NULL
+    },
+    {
+        ngx_string("buffering"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_num_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.buffering),
+        NULL
+    },
+    {
+        ngx_string("bufs_num"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_num_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.bufs.num),
+        NULL
+    },
+    {
+        ngx_string("bufs_size"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.bufs.size),
+        NULL
+    },
+    {
+        ngx_string("buffer_size"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.buffer_size),
+        NULL
+    },
+    {
+        ngx_string("busy_buffers_size"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.busy_buffers_size),
+        NULL
+    },
+    {
+        ngx_string("temp_file_write_size "),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.temp_file_write_size),
+        NULL
+    },
+    {
+        ngx_string("max_temp_file_size"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_myupstream_conf_t, upstream.max_temp_file_size),
+        NULL
+    },
+    ngx_null_command
+};
+
+
+
+ngx_module_t  ngx_http_myupstream_module = {
+    NGX_MODULE_V1,
+    &ngx_http_myupstream_module_ctx,             /* module context */
+    ngx_http_myupstream_commands,                /* module directives */
+    NGX_HTTP_MODULE,                       /* module type */
+    NULL,                                  /* init master */
+    NULL,                                  /* init module */
+    NULL,                                  /* init process */
+    NULL,                                  /* init thread */
+    NULL,                                  /* exit thread */
+    NULL,                                  /* exit process */
+    NULL,                                  /* exit master */
+    NGX_MODULE_V1_PADDING
+};
+
+
 static void*
 ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf)
 {
@@ -47,10 +165,18 @@ ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf)
     mycf->upstream.connect_timeout = NGX_CONF_UNSET_MSEC;
     mycf->upstream.send_timeout = NGX_CONF_UNSET_MSEC;
     mycf->upstream.read_timeout = NGX_CONF_UNSET_MSEC;
-    mycf->upstream.store_access = NGX_CONF_UNSET_MSEC;
+    mycf->upstream.store_access = NGX_CONF_UNSET_UINT;
 
-    mycf->upstream.hide_headers = NGX_CONF_UNSET_PRT;
-    mycf->upstream.pass_headers = NGX_CONF_UNSET_PRT;
+    mycf->upstream.buffering = NGX_CONF_UNSET;
+    mycf->upstream.bufs.num = NGX_CONF_UNSET;
+    mycf->upstream.bufs.size = NGX_CONF_UNSET_SIZE;
+    mycf->upstream.buffer_size = NGX_CONF_UNSET_SIZE;
+    mycf->upstream.busy_buffers_size = NGX_CONF_UNSET_SIZE;
+    mycf->upstream.temp_file_write_size = NGX_CONF_UNSET_SIZE;
+    mycf->upstream.max_temp_file_size = NGX_CONF_UNSET_SIZE;
+
+    mycf->upstream.hide_headers = NGX_CONF_UNSET_PTR;
+    mycf->upstream.pass_headers = NGX_CONF_UNSET_PTR;
 
     return mycf;
 }
@@ -85,7 +211,7 @@ static ngx_int_t ngx_http_myupstream_handler(ngx_http_request_t *r)
     u->resolved = (ngx_http_upstream_resolved_t*) ngx_palloc(r->pool, sizeof(ngx_http_upstream_resolved_t));
     if(u->resolved == NULL)
     {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "init resolved error: %s", strerror(error)); 
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "init resolved error: %s", strerror(errno)); 
         return NGX_ERROR;
     }
 
@@ -94,27 +220,27 @@ static ngx_int_t ngx_http_myupstream_handler(ngx_http_request_t *r)
     struct hostent *pHost = gethostbyname((char *)"www.google.com");
     if(pHost == NULL)
     {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "gethostbyname error: %s", strerror(error)); 
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "gethostbyname error: %s", strerror(errno)); 
         return NGX_ERROR;
     }
 
     backendSockAddr.sin_family = AF_INET;
     backendSockAddr.sin_port = htons((in_port_t)80);
 
-    char *pDMsIP = inet_ntoa(*(struct in_addr*) (pHost->h_addr_list[0]));
+    char *pDmsIP = inet_ntoa(*(struct in_addr*) (pHost->h_addr_list[0]));
     backendSockAddr.sin_addr.s_addr = inet_addr(pDmsIP);
-    myctx->backendSockAddr.data = (u_char*)pDmsIP;
-    myctx->backendSockAddr.len = strlen(pDmsIP);
+    myctx->backendServer.data = (u_char*)pDmsIP;
+    myctx->backendServer.len = strlen(pDmsIP);
 
     //将地址设置到resolved成员
-    u->resolved->sockadd = (struct sockaddr*)&backendSockAddr;
+    u->resolved->sockaddr = (struct sockaddr*)&backendSockAddr;
     u->resolved->socklen = sizeof(struct sockaddr_in);
     u->resolved->naddrs = 1;
 
     //设置三个回调方法
     u->create_request = myupstream_create_request;
     u->process_header = myupstream_process_status_line;
-    u->finalize_request = myupsteam_finalize_request;
+    u->finalize_request = myupstream_finalize_request;
 
     r->main->count++;
     ngx_http_upstream_init(r);
@@ -132,66 +258,14 @@ ngx_http_myupstream(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
-static ngx_command_t  ngx_http_myupstream_commands[] = {
-    {
-        ngx_string("myupstream"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
-        ngx_http_myupstream,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        0,
-        NULL
-    },
-    {
-        ngx_string("connect_timeout"),
-        NGX_HTTP_LOC_CONF|NGX_ARGS1,
-        ngx_conf_set_msec_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offset(ngx_http_myupstream_conf_t, upstream.connect_timeout),
-        NULL
-    },
-    {
-        ngx_string("send_timeout"),
-        NGX_HTTP_LOC_CONF|NGX_ARGS1,
-        ngx_conf_set_msec_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offset(ngx_http_myupstream_conf_t, upstream.send_timeout),
-        NULL
-    },
-    {
-        ngx_string("read_timeout"),
-        NGX_HTTP_LOC_CONF|NGX_ARGS1,
-        ngx_conf_set_msec_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offset(ngx_http_myupstream_conf_t, upstream.read_timeout),
-        NULL
-    },
 
-    ngx_null_command
-};
-
-
-
-ngx_module_t  ngx_http_myupstream_module = {
-    NGX_MODULE_V1,
-    &ngx_http_myupstream_module_ctx,             /* module context */
-    ngx_http_myupstream_commands,                /* module directives */
-    NGX_HTTP_MODULE,                       /* module type */
-    NULL,                                  /* init master */
-    NULL,                                  /* init module */
-    NULL,                                  /* init process */
-    NULL,                                  /* init thread */
-    NULL,                                  /* exit thread */
-    NULL,                                  /* exit process */
-    NULL,                                  /* exit master */
-    NGX_MODULE_V1_PADDING
-};
 
 //构造发往上游服务器的请求
 ngx_int_t 
 myupstream_create_request(ngx_http_request_t *r)
 {
     static ngx_str_t backendQueryLine = ngx_string("GET /search?q=%V HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n");
-    ngx_int_t queryLineLen = backendQueryLine.len + r.args.len - 2;
+    ngx_int_t queryLineLen = backendQueryLine.len + r->args.len - 2;
 
     ngx_buf_t *b = ngx_create_temp_buf(r->pool, queryLineLen);
     if(b == NULL)
@@ -199,7 +273,7 @@ myupstream_create_request(ngx_http_request_t *r)
 
     //因为请求可能要调用多次epoll，所以不能放在堆中
     b->last = b->pos + queryLineLen;
-    ngx_sprintf(b->pos, queryLineLen, (char *)backendQueryLine.data, &r->args);
+    ngx_snprintf(b->pos, queryLineLen, (char *)backendQueryLine.data, &r->args);
     
     //发送请求的buf链
     r->upstream->request_bufs = ngx_alloc_chain_link(r->pool);
@@ -228,7 +302,7 @@ myupstream_process_status_line(ngx_http_request_t *r)
 
     u = r->upstream;
     //使用ngx提供的函数将上游返回的字节流解析到ctx->status中
-    rc = ngx_http_parse_status_line(r, &u->buffer, ctx->status);
+    rc = ngx_http_parse_status_line(r, &u->buffer, &ctx->status);
     if(rc == NGX_AGAIN)
         return rc;
     if(rc == NGX_ERROR)
@@ -236,7 +310,7 @@ myupstream_process_status_line(ngx_http_request_t *r)
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "upstream sent no valid HTTP/1.0 header");
         r->http_version = NGX_HTTP_VERSION_9;
         //为什么返回ok
-        r->state->status = NGX_HTTP_OK;
+        u->state->status = NGX_HTTP_OK;
         return NGX_OK;
     }
 
@@ -273,7 +347,7 @@ myupstream_process_header(ngx_http_request_t *r)
     for(;;)
     {
         rc = ngx_http_parse_header_line(r, &r->upstream->buffer, 1);
-        if(rc == OK)
+        if(rc == NGX_OK)
         {
             //向headers_in.headers这个ngx_list_t中添加HTTP头部
             h = ngx_list_push(&r->upstream->headers_in.headers);
@@ -298,11 +372,11 @@ myupstream_process_header(ngx_http_request_t *r)
             //lowcase_index的作用？
             if(h->key.len == r->lowcase_index)
             {
-                ngx_mencpy(h->lowcase_key, h->lowcase_header, h->key.len);
+                ngx_memcpy(h->lowcase_key, r->lowcase_header, h->key.len);
             }
             else
             {
-                ngx_stllow(h->lowcase_key, h->key.data, h->key.len);
+                ngx_strlow(h->lowcase_key, h->key.data, h->key.len);
             }
 
             //查找该头部是否在配置文件中
@@ -329,7 +403,7 @@ myupstream_process_header(ngx_http_request_t *r)
                 ngx_str_null(&h->value);
                 h->lowcase_key = (u_char*) "server";
             }
-            if(r->upstream->headers_in.data == NULL)
+            if(r->upstream->headers_in.date == NULL)
             {
                 h = ngx_list_push(&r->upstream->headers_in.headers);
                 if(h == NULL)
@@ -348,12 +422,12 @@ myupstream_process_header(ngx_http_request_t *r)
             return rc;
         }
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "upstream sent invalid header");
-        return NGX_HTTP_STREAM_INVALID_HEADER;
+        return NGX_HTTP_UPSTREAM_INVALID_HEADER;
     }
 }
 
-ngx_int_t 
-myupsteam_finalize_request(ngx_http_request_t *r)
+static void
+myupstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
-    ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "myupsteam_finalize_request");
+    ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "myupstream_finalize_request");
 }

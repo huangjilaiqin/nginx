@@ -117,7 +117,7 @@ static ngx_command_t  ngx_http_myupstream_commands[] = {
         NULL
     },
     {
-        ngx_string("temp_file_write_size "),
+        ngx_string("temp_file_write_size"),
         NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_size_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
@@ -274,6 +274,11 @@ myupstream_create_request(ngx_http_request_t *r)
     //因为请求可能要调用多次epoll，所以不能放在堆中
     b->last = b->pos + queryLineLen;
     ngx_snprintf(b->pos, queryLineLen, (char *)backendQueryLine.data, &r->args);
+
+    u_char a[1024];
+    ngx_snprintf(a, 1024, "%s", b->pos);
+    a[queryLineLen] = '\0';
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "%s",  a);
     
     //发送请求的buf链
     r->upstream->request_bufs = ngx_alloc_chain_link(r->pool);
@@ -318,6 +323,7 @@ myupstream_process_status_line(ngx_http_request_t *r)
     if(u->state)
     {
         u->state->status = ctx->status.code;
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "status code:%d", u->state->status);
     }
     u->headers_in.status_n = ctx->status.code;
     len = ctx->status.end - ctx->status.start;

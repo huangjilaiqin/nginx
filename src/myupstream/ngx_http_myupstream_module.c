@@ -7,6 +7,7 @@
 #include <ngx_http.h>
 
 static void* ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf);
+static char* ngx_http_myupstream_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 ngx_int_t myupstream_create_request(ngx_http_request_t *r);
 ngx_int_t myupstream_process_status_line(ngx_http_request_t *r);
 ngx_int_t myupstream_process_header(ngx_http_request_t *r);
@@ -31,8 +32,8 @@ static ngx_http_module_t  ngx_http_myupstream_module_ctx = {
     NULL,                                  /* create server configuration */
     NULL,                                  /* merge server configuration */
 
-    ngx_http_myupstream_create_loc_conf,                                  /* create location configuration */
-    NULL                                   /* merge location configuration */
+    ngx_http_myupstream_create_loc_conf,   /* create location configuration */
+    ngx_http_myupstream_merge_loc_conf,    /* merge location configuration */
 };
 
 static ngx_command_t  ngx_http_myupstream_commands[] = {
@@ -152,6 +153,18 @@ ngx_module_t  ngx_http_myupstream_module = {
     NGX_MODULE_V1_PADDING
 };
 
+static ngx_str_t  ngx_http_proxy_hide_headers[] =
+{
+    ngx_string("Date"),
+    ngx_string("Server"),
+    ngx_string("X-Pad"),
+    ngx_string("X-Accel-Expires"),
+    ngx_string("X-Accel-Redirect"),
+    ngx_string("X-Accel-Limit-Rate"),
+    ngx_string("X-Accel-Buffering"),
+    ngx_string("X-Accel-Charset"),
+    ngx_null_string
+};
 
 static void*
 ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf)
@@ -180,6 +193,24 @@ ngx_http_myupstream_create_loc_conf(ngx_conf_t *cf)
 
     return mycf;
 }
+
+static char* 
+ngx_http_myupstream_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+{
+    ngx_http_myupstream_conf_t *prev = (ngx_http_myupstream_conf_t *)parent;
+    ngx_http_myupstream_conf_t *conf = (ngx_http_myupstream_conf_t *)child;
+
+    ngx_hash_init_t hash;
+    hash.max_size = 100;
+    hash.bucket_size = 1024;
+    hash.name = "proxy_headers_hash";
+    if(ngx_http_upstream_hide_headers_hash(cf, &conf->upstream, &prev->upstream, ngx_http_proxy_hide_headers, &hash) != NGX_OK)
+    {
+        return NGX_CONF_ERROR;
+    }
+    return NGX_OK;
+}
+
 
 static ngx_int_t ngx_http_myupstream_handler(ngx_http_request_t *r)
 {
@@ -215,9 +246,9 @@ static ngx_int_t ngx_http_myupstream_handler(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    //设置www.google.com
+    //设置www.baidu.com
     static struct sockaddr_in backendSockAddr;
-    struct hostent *pHost = gethostbyname((char *)"www.google.com");
+    struct hostent *pHost = gethostbyname((char *)"www.baidu.com");
     if(pHost == NULL)
     {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "gethostbyname error: %s", strerror(errno)); 
@@ -264,7 +295,7 @@ ngx_http_myupstream(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 ngx_int_t 
 myupstream_create_request(ngx_http_request_t *r)
 {
-    static ngx_str_t backendQueryLine = ngx_string("GET /search?q=%V HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n");
+    static ngx_str_t backendQueryLine = ngx_string("GET /s?wd=%V HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n");
     ngx_int_t queryLineLen = backendQueryLine.len + r->args.len - 2;
 
     ngx_buf_t *b = ngx_create_temp_buf(r->pool, queryLineLen);
@@ -348,7 +379,11 @@ myupstream_process_header(ngx_http_request_t *r)
     ngx_http_upstream_header_t *hh;
     ngx_http_upstream_main_conf_t *umcf;
 
-    umcf = ngx_http_get_module_ctx(r, ngx_http_upstream_module);
+    umcf = ngx_http_get_module_main_conf(r, ngx_http_upstream_module);
+    if(umcf == NULL)
+    {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "umcf is null");
+    }
     
     for(;;)
     {
@@ -361,17 +396,6 @@ myupstream_process_header(ngx_http_request_t *r)
             if(h == NULL)
                 return NGX_ERROR;
 
-            if(r == NULL)
-            {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "r is null");
-            }
-            else
-            {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "r is not null");
-            }
-
-            //结果显示r->header_hash为空
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "header_hash:%u\n", r->header_hash);
             h->hash = r->header_hash;
             h->key.len = r->header_name_end - r->header_name_start;
             h->value.len = r->header_end - r->header_start;
@@ -385,10 +409,8 @@ myupstream_process_header(ngx_http_request_t *r)
 
             ngx_memcpy(h->key.data, r->header_name_start, h->key.len);
             h->key.data[h->key.len] = '\0';
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "key data:%s", h->key.data);
             ngx_memcpy(h->value.data, r->header_start, h->value.len);
             h->value.data[h->value.len] = '\0';
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "value data:%s", h->value.data);
 
             //lowcase_index的作用？
             if(h->key.len == r->lowcase_index)
@@ -403,12 +425,10 @@ myupstream_process_header(ngx_http_request_t *r)
             //查找该头部是否在配置文件中
             //因为h->hash为空这里出发signal 11,worker进程退出
             hh = ngx_hash_find(&umcf->headers_in_hash, h->hash, h->lowcase_key, h->key.len);
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_hash_find out\n");
             if(hh && hh->handler(r, h, hh->offset) != NGX_OK)
             {
                 return NGX_ERROR;
             }
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "continue\n");
             continue;
         }
 
@@ -440,7 +460,6 @@ myupstream_process_header(ngx_http_request_t *r)
                 ngx_str_null(&h->value);
                 h->lowcase_key = (u_char*) "date";
             }
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "解析头部完成");
             return NGX_OK;
         }
         if(rc == NGX_AGAIN)

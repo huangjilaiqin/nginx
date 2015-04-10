@@ -33,6 +33,7 @@ static ngx_http_module_t  ngx_http_myupstream_module_ctx = {
     NULL,                                  /* merge server configuration */
 
     ngx_http_myupstream_create_loc_conf,   /* create location configuration */
+    //产生main这个配置
     ngx_http_myupstream_merge_loc_conf,    /* merge location configuration */
 };
 
@@ -204,6 +205,7 @@ ngx_http_myupstream_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     hash.max_size = 100;
     hash.bucket_size = 1024;
     hash.name = "proxy_headers_hash";
+    //合并hide_headers_hash成员,ngx_http_proxy_hide_headers是默认成员
     if(ngx_http_upstream_hide_headers_hash(cf, &conf->upstream, &prev->upstream, ngx_http_proxy_hide_headers, &hash) != NGX_OK)
     {
         return NGX_CONF_ERROR;
